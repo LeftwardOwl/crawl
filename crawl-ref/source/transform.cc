@@ -273,11 +273,11 @@ string Form::get_untransform_message() const
  *          allow for pseudo-decimal flexibility (& to match
  *          player::armour_class())
  */
-int Form::get_ac_bonus() const
+fixedp<> Form::get_ac_bonus() const
 {
-    return flat_ac * 100
-           + power_ac * you.props[TRANSFORM_POW_KEY].get_int()
-           + xl_ac * you.experience_level;
+    return fixedp<>(flat_ac)
+           + fixedp<>(power_ac) * you.props[TRANSFORM_POW_KEY].get_int() / 100
+           + fixedp<>(xl_ac) * you.experience_level / 100;
 }
 
 /**
@@ -693,10 +693,10 @@ public:
      * The AC bonus of the form, multiplied by 100 to match
      * player::armour_class().
      */
-    int get_ac_bonus() const override
+    fixedp<> get_ac_bonus() const override
     {
         if (species::is_draconian(you.species))
-            return 1000;
+            return fixedp<>(10);
         return Form::get_ac_bonus();
     }
 
@@ -1858,25 +1858,31 @@ bool transform(int pow, transformation which_trans, bool involuntary,
             mpr("You feel strangely stable.");
         }
         you.duration[DUR_FLIGHT] = 0;
-        // break out of webs/nets as well
+
+        if (you.attribute[ATTR_HELD])
+        {
+            const trap_def *trap = trap_at(you.pos());
+            if (trap && trap->type == TRAP_WEB)
+            {
+                leave_web(true);
+                if (trap_at(you.pos()))
+                    mpr("Your branches slip out of the web.");
+                else
+                    mpr("Your branches shred the web that entangled you.");
+            }
+        }
+        // Fall through to dragon form to leave nets.
 
     case transformation::dragon:
         if (you.attribute[ATTR_HELD])
         {
-            trap_def *trap = trap_at(you.pos());
-            if (trap && trap->type == TRAP_WEB)
-            {
-                mpr("You shred the web into pieces!");
-                destroy_trap(you.pos());
-            }
             int net = get_trapping_net(you.pos());
             if (net != NON_ITEM)
             {
                 mpr("The net rips apart!");
                 destroy_item(net);
+                stop_being_held();
             }
-
-            stop_being_held();
         }
         break;
 
