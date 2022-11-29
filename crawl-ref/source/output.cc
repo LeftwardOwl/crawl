@@ -2448,9 +2448,7 @@ static vector<formatted_string> _get_overview_resistances(
     out += _resist_composer("Harm", cwidth, harm) + "\n";
 
     const int rampage = you.rampaging();
-    const string rampage_name = you.has_mutation(MUT_ROLLPAGE) ? "Roll" :
-                                                                 "Rampage";
-    out += _resist_composer(rampage_name.c_str(), cwidth, rampage, 1, true,
+    out += _resist_composer("Rampage", cwidth, rampage, 1, true,
                             player_equip_unrand(UNRAND_SEVEN_LEAGUE_BOOTS))
            + "\n";
 

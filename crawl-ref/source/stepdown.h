@@ -4,9 +4,7 @@
 **/
 
 #pragma once
-
 #include "fixedp.h"
-
 // stepdowns
 
 enum rounding_type

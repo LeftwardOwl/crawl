@@ -791,7 +791,7 @@ int str_to_trap(const string &s)
  * @returns a string including a description of its head, its body, its flight
  *          mode (if any), and how it smells or looks.
  */
-static string _describe_demon(const string& name, bool flying, colour_t colour)
+static string _describe_demon(const string& name, bool flying)
 {
     const uint32_t seed = hash32(&name[0], name.size());
     #define HRANDOM_ELEMENT(arr, id) arr[hash_with_seed(ARRAYSZ(arr), seed, id)]
@@ -924,9 +924,6 @@ static string _describe_demon(const string& name, bool flying, colour_t colour)
     description << "One of the many lords of Pandemonium, " << name << " has ";
 
     description << article_a(HRANDOM_ELEMENT(body_types, 2));
-    // ETC_RANDOM is also possible, handled later
-    if (colour >= 0 && colour < NUM_TERM_COLOURS)
-        description << " " << colour_to_str(colour, true);
     description << " body ";
 
     if (flying)
@@ -943,9 +940,6 @@ static string _describe_demon(const string& name, bool flying, colour_t colour)
 
     if (hash_with_seed(2, seed, 6)) // 50%
         description << HRANDOM_ELEMENT(misc_descs, 6);
-
-    if (colour == ETC_RANDOM)
-        description << " It changes colour whenever you look at it.";
 
     return description.str();
 }
@@ -1244,52 +1238,39 @@ static string _describe_missile_brand(const item_def &item)
      return " + " + uppercase_first(brand_name);
 }
 
-string damage_rating(const item_def *item)
+static string _damage_rating(const item_def &item)
 {
-    if (item && is_unrandom_artefact(*item, UNRAND_WOE))
-        return "your enemies will bleed and die for Makhleb.";
+    if (is_unrandom_artefact(item, UNRAND_WOE))
+        return "\nDamage rating: your enemies will bleed and die for Makhleb.";
 
-    const bool thrown = item && item->base_type == OBJ_MISSILES;
+    const bool thrown = item.base_type == OBJ_MISSILES;
 
-    // Would be great to have a breakdown of UC damage by skill, form, claws etc.
-    const int base_dam = item ? property(*item, PWPN_DAMAGE)
-                              : unarmed_base_damage();
-    const int extra_base_dam = thrown ? throwing_base_damage_bonus(*item) :
-                                !item ? unarmed_base_damage_bonus(false) :
-                                        0;
-    const skill_type skill = item ? _item_training_skill(*item) : SK_UNARMED_COMBAT;
+    const int base_dam = property(item, PWPN_DAMAGE);
+    const int extra_base_dam = thrown ? throwing_base_damage_bonus(item) : 0;
+    const skill_type skill = _item_training_skill(item);
     const int stat_mult = stat_modify_damage(100, skill, true);
     const bool use_str = weapon_uses_strength(skill, true);
-    // Throwing weapons and UC only get a damage mult from Fighting skill,
-    // not from Throwing/UC skill.
-    const bool use_weapon_skill = item && !thrown;
-    const int weapon_skill_mult = use_weapon_skill ? apply_weapon_skill(100, skill, false) : 100;
-    const int skill_mult = apply_fighting_skill(weapon_skill_mult, false, false);
+    const int skill_mult = apply_fighting_skill(apply_weapon_skill(100, skill, false), false, false);
 
     const int slaying = slaying_bonus(false);
-    const int ench = item && item_ident(*item, ISFLAG_KNOW_PLUSES) ? item->plus : 0;
-    const int plusses = slaying + ench;
+    int plusses = slaying;
+    if (item_ident(item, ISFLAG_KNOW_PLUSES))
+        plusses += item.plus;
 
     brand_type brand = SPWPN_NORMAL;
-    if (!item)
-        brand = get_form()->get_uc_brand();
-    else if (item_type_known(*item) && !thrown)
-        brand = get_weapon_brand(*item);
+    if (item_type_known(item) && !thrown)
+        brand = get_weapon_brand(item);
 
     const int DAM_RATE_SCALE = 100;
     int rating = (base_dam + extra_base_dam) * DAM_RATE_SCALE;
     rating = stat_modify_damage(rating, skill, true);
-    if (use_weapon_skill)
-        rating = apply_weapon_skill(rating, skill, false);
+    rating = apply_weapon_skill(rating, skill, false);
     rating = apply_fighting_skill(rating, false, false);
     rating /= DAM_RATE_SCALE;
     rating += plusses;
 
-    const string base_dam_desc = thrown ? make_stringf("[%d + %d (Thrw)]",
-                                                       base_dam, extra_base_dam) :
-                                  !item ? make_stringf("[%d + %d (UC)]",
-                                                       base_dam, extra_base_dam) :
-                                          make_stringf("%d", base_dam);
+    const string base_dam_desc = thrown ? make_stringf("[%d + %d (Thrw)]", base_dam, extra_base_dam)
+                                        : make_stringf("%d", base_dam);
 
     string plusses_desc;
     if (plusses)
@@ -1297,24 +1278,23 @@ string damage_rating(const item_def *item)
         plusses_desc = make_stringf(" %s %d (%s)",
                                     plusses < 0 ? "-" : "+",
                                     abs(plusses),
-                                    slaying && ench ? "Ench + Slay" :
-                                               ench ? "Ench"
-                                                    : "Slay");
+                                    slaying && item.plus ? "Ench + Slay" :
+                                               item.plus ? "Ench"
+                                                         : "Slay");
     }
 
     const string brand_desc
-        = item && is_unrandom_artefact(*item, UNRAND_DAMNATION) ? " + Damn"
-          : thrown ? _describe_missile_brand(*item)
+        = is_unrandom_artefact(item, UNRAND_DAMNATION) ? " + Damn"
+          : thrown ? _describe_missile_brand(item)
                    : _describe_brand(brand);
 
     return make_stringf(
-        "%d (Base %s x %d%% (%s) x %d%% (%s)%s)%s.",
+        "\nDamage rating: %d (Base %s x %d%% (%s) x %d%% (Skill)%s)%s.",
         rating,
         base_dam_desc.c_str(),
         stat_mult,
         use_str ? "Str" : "Dex",
         skill_mult,
-        use_weapon_skill ? "Skill" : "Fight",
         plusses_desc.c_str(),
         brand_desc.c_str());
 }
@@ -1406,7 +1386,7 @@ static void _append_weapon_stats(string &description, const item_def &item)
     if (want_player_stats)
     {
         description += _desc_attack_delay(item);
-        description += "\nDamage rating: " + damage_rating(&item);
+        description += _damage_rating(item);
     }
 }
 
@@ -1785,8 +1765,8 @@ static string _describe_ammo(const item_def &item)
         if (below_target)
             _append_skill_target_desc(description, SK_THROWING, target_skill);
 
-        if (!is_useless_item(item) && property(item, PWPN_DAMAGE))
-            description += "\nDamage rating: " + damage_rating(&item);
+        if (!is_useless_item(item))
+            description += _damage_rating(item);
     }
 
     if (ammo_always_destroyed(item))
@@ -2115,10 +2095,10 @@ static string _describe_lignify_ac()
         if (tree_form->slot_available(get_equip_slot(item)))
             treeform_items.push_back(item);
 
-    const int treeform_ac =
-        ((int) you.base_ac_with_specific_items(treeform_items)
-         - (int) you.racial_ac(true) - you.ac_changes_from_mutations()
-         - (int) get_form()->get_ac_bonus() + (int) tree_form->get_ac_bonus());
+    const fixedp<> treeform_ac =
+        (you.base_ac_with_specific_items( treeform_items)
+         - you.racial_ac(true) - you.ac_changes_from_mutations()
+         - get_form()->get_ac_bonus() + tree_form->get_ac_bonus()) / 100;
 
     return make_stringf("If you quaff this potion your AC would be %d.",
                         treeform_ac);
@@ -3425,9 +3405,6 @@ command_type describe_item_popup(const item_def &item,
     if (!item.defined())
         return CMD_NO_CMD;
 
-    // Dead players use no items.
-    do_actions = do_actions && !(you.pending_revival || crawl_state.updating_scores);
-
     string name = item.name(DESC_INVENTORY_EQUIP) + ".";
     if (!in_inventory(item))
         name = uppercase_first(name);
@@ -3593,9 +3570,12 @@ command_type describe_item_popup(const item_def &item,
  *  @return whether to remain in the outer mode (inventory, `xv`) after the popup.
  *
  */
-bool describe_item(item_def &item, function<void (string&)> fixup_desc, bool do_actions)
+bool describe_item(item_def &item, function<void (string&)> fixup_desc)
 {
+    // Dead players use no items.
+    const bool do_actions = !(you.pending_revival || crawl_state.updating_scores);
     command_type action = describe_item_popup(item, fixup_desc, do_actions);
+
     return _do_action(item, action);
 }
 
@@ -5060,14 +5040,6 @@ static string _monster_stat_description(const monster_info& mi, bool mark_spells
                << conjugate_verb("are", plural)
                << " immune to blinding.\n";
     }
-
-    if (mons_class_flag(mi.type, M_INSUBSTANTIAL))
-    {
-        result << uppercase_first(pronoun) << " "
-               << conjugate_verb("are", plural)
-               << " insubstantial and immune to ensnarement.\n";
-    }
-
     // XXX: could mention "immune to dazzling" here, but that's spammy, since
     // it's true of such a huge number of monsters. (undead, statues, plants).
     // Might be better to have some place where players can see holiness &
@@ -5360,7 +5332,7 @@ void get_monster_db_desc(const monster_info& mi, describe_info &inf,
         break;
 
     case MONS_PANDEMONIUM_LORD:
-        inf.body << _describe_demon(mi.mname, mi.airborne(), mi.ghost_colour) << "\n";
+        inf.body << _describe_demon(mi.mname, mi.airborne()) << "\n";
         break;
 
     case MONS_MUTANT_BEAST:

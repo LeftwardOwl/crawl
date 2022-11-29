@@ -53,6 +53,7 @@
 #define PARALYSED_BY_KEY "paralysed_by"
 #define PETRIFIED_BY_KEY "petrified_by"
 #define FROZEN_RAMPARTS_KEY "frozen_ramparts_position"
+#define PALENTONGA_CURL_KEY "palentonga_curl"
 
 // display/messaging breakpoints for penalties from Ru's MUT_HORROR
 #define HORROR_LVL_EXTREME  3
@@ -658,6 +659,7 @@ public:
                        vector<const item_def *> *matches = nullptr) const override;
 
     int infusion_amount() const;
+    int infusion_multiplier() const;
 
     item_def *weapon(int which_attack = -1) const override;
     item_def *shield() const override;
@@ -706,7 +708,6 @@ public:
     bool can_bleed(bool allow_tran = true) const override;
     bool can_drink(bool temp = true) const;
     bool is_stationary() const override;
-    bool is_motile() const;
     bool malmutate(const string &reason) override;
     bool polymorph(int pow, bool allow_immobile = true) override;
     void backlight();
@@ -781,7 +782,6 @@ public:
 
     bool res_corr(bool allow_random = true, bool temp = true) const override;
     bool clarity(bool items = true) const override;
-    bool faith(bool items = true) const override;
     bool stasis() const override;
     bool cloud_immune(bool items = true) const override;
 
@@ -850,11 +850,13 @@ public:
     bool wearing_light_armour(bool with_skill = false) const;
     int  skill(skill_type skill, int scale = 1, bool real = false,
                bool temp = true) const override;
+
     template <int S> fixedp<int, S> skill(skill_type sk,
         bool real = false, bool drained = true, bool temp = true) const
     {
         return fixedp<int, S>::from_scaled(skill(sk, S, real, temp));
     }
+
     bool do_shaft(bool check_terrain = true) override;
     bool shaftable(bool check_terrain = true) const;
 
@@ -916,7 +918,7 @@ public:
 
     int armour_class_with_one_removal(item_def sub) const;
 
-    int ac_changes_from_mutations() const;
+    fixedp<> ac_changes_from_mutations() const;
     vector<const item_def *> get_armour_items() const;
     vector<const item_def *> get_armour_items_one_sub(const item_def& sub) const;
     vector<const item_def *> get_armour_items_one_removal(const item_def& sub) const;
@@ -935,15 +937,6 @@ protected:
 
 class monster;
 struct item_def;
-
-class player_vanishes
-{
-    coord_def source;
-    bool movement;
-public:
-    player_vanishes(bool _movement=false);
-    ~player_vanishes();
-};
 
 // Helper. Use move_player_to_grid or player::apply_location_effects instead.
 void moveto_location_effects(dungeon_feature_type old_feat,
@@ -971,6 +964,7 @@ void move_player_to_grid(const coord_def& p, bool stepped);
 bool is_map_persistent();
 bool player_in_connected_branch();
 bool player_in_hell(bool vestibule=false);
+bool player_in_starting_abyss();
 
 static inline bool player_in_branch(int branch)
 {
@@ -991,7 +985,7 @@ bool player_effectively_in_light_armour();
 int player_shield_racial_factor();
 int player_armour_shield_spell_penalty();
 
-int player_movement_speed(bool check_terrain = true);
+int player_movement_speed();
 
 int player_icemail_armour_class();
 int player_condensation_shield_class();

@@ -251,9 +251,7 @@ public:
     virtual void shield_block_succeeded();
     virtual bool missile_repulsion() const = 0;
 
-    // Combat-related virtual class methods
     
-
     virtual monster_type mons_species(bool zombie_base = false) const = 0;
 
     virtual mon_holy_type holiness(bool temp = true) const = 0;

@@ -27,7 +27,6 @@
 #include "cloud.h"
 #include "coordit.h"
 #include "delay.h"
-#include "describe.h" // damage_rating
 #include "dgn-overview.h"
 #include "dgn-event.h"
 #include "directn.h"
@@ -68,7 +67,6 @@
 #include "shout.h"
 #include "skills.h"
 #include "species.h" // random_starting_species
-#include "spl-clouds.h" // explode_blastsparks_at
 #include "spl-damage.h"
 #include "spl-selfench.h"
 #include "spl-summoning.h"
@@ -376,7 +374,7 @@ bool swap_check(monster* mons, coord_def &loc, bool quiet)
 {
     loc = you.pos();
 
-    if (!you.is_motile())
+    if (you.is_stationary())
         return false;
 
     // Don't move onto dangerous terrain.
@@ -530,18 +528,11 @@ void moveto_location_effects(dungeon_feature_type old_feat,
     if (old_pos == you.pos() && stepped)
         actor_apply_toxic_bog(&you);
 
-    if (old_pos != you.pos())
-    {
-        cloud_struct* cloud = cloud_at(you.pos());
-        if (cloud && cloud->type == CLOUD_BLASTSPARKS)
-            explode_blastsparks_at(you.pos()); // schedules a fineff
-
-        // Traps go off.
-        // (But not when losing flight - i.e., moving into the same tile)
-        trap_def* ptrap = trap_at(you.pos());
-        if (ptrap)
-            ptrap->trigger(you);
-    }
+    // Traps go off.
+    // (But not when losing flight - i.e., moving into the same tile)
+    trap_def* ptrap = trap_at(you.pos());
+    if (ptrap && old_pos != you.pos())
+        ptrap->trigger(you);
 
     if (stepped)
         _moveto_maybe_repel_stairs();
@@ -634,6 +625,16 @@ bool player_in_hell(bool vestibule)
 {
     return vestibule ? is_hell_branch(you.where_are_you) :
                        is_hell_subbranch(you.where_are_you);
+}
+
+/**
+ * Is the player in the slightly-special version of the abyss that AKs start
+ * in?
+ */
+bool player_in_starting_abyss()
+{
+    return you.chapter == CHAPTER_POCKET_ABYSS
+           && player_in_branch(BRANCH_ABYSS) && you.depth <= 1;
 }
 
 bool player_in_connected_branch()
@@ -1165,7 +1166,10 @@ int player_regen()
     // Note: if some condition can set rr = 0, can't be rested off, and
     // would allow travel, please update is_sufficiently_rested.
 
-    int rr = 20 + you.hp_max / 6;
+    int rr = you.hp_max / 3;
+
+    if (rr > 20)
+        rr = 20 + ((rr - 20) / 2);
 
     // Add in miscellaneous bonuses
     rr += _player_bonus_regen();
@@ -1780,13 +1784,13 @@ int player_prot_life(bool allow_random, bool temp, bool items)
 
 // Even a slight speed advantage is very good... and we certainly don't
 // want to go past 6 (see below). -- bwr
-int player_movement_speed(bool check_terrain)
+int player_movement_speed()
 {
     int mv = you.form == transformation::none
         ? 10
         : form_base_movespeed(you.form);
 
-    if (check_terrain && feat_is_water(env.grid(you.pos())))
+    if (feat_is_water(env.grid(you.pos())))
     {
         if (you.get_mutation_level(MUT_NIMBLE_SWIMMER) >= 2)
             mv -= 4;
@@ -1796,11 +1800,8 @@ int player_movement_speed(bool check_terrain)
 
     // moving on liquefied ground, or while maintaining the
     // effect takes longer
-    if (check_terrain && (you.liquefied_ground()
-                          || you.duration[DUR_LIQUEFYING]))
-    {
+    if (you.liquefied_ground() || you.duration[DUR_LIQUEFYING])
         mv += 3;
-    }
 
     // armour
     if (player_equip_unrand(UNRAND_LIGHTNING_SCALES))
@@ -1831,8 +1832,7 @@ int player_movement_speed(bool check_terrain)
         mv /= 10;
     }
 
-    if (you.duration[DUR_SWIFTNESS] > 0 && (!check_terrain
-                                            || !you.in_liquid()))
+    if (you.duration[DUR_SWIFTNESS] > 0 && !you.in_liquid())
     {
         if (you.attribute[ATTR_SWIFTNESS] > 0)
           mv = div_rand_round(3*mv, 4);
@@ -1947,9 +1947,9 @@ int player_shield_racial_factor()
 // The total EV penalty to the player for all their worn armour items
 // with a base EV penalty (i.e. EV penalty as a base armour property,
 // not as a randart property).
-static int _player_adjusted_evasion_penalty(const int scale)
+static fixedp<> _player_adjusted_evasion_penalty()
 {
-    int piece_armour_evasion_penalty = 0;
+    fixedp<> piece_armour_evasion_penalty = 0;
 
     // Some lesser armours have small penalties now (barding).
     for (int i = EQ_MIN_ARMOUR; i < EQ_MAX_ARMOUR; i++)
@@ -1959,13 +1959,14 @@ static int _player_adjusted_evasion_penalty(const int scale)
 
         // [ds] Evasion modifiers for armour are negatives, change
         // those to positive for penalty calc.
-        const int penalty = (-property(you.inv[you.equip[i]], PARM_EVASION))/3;
+        const fixedp<> penalty = 
+            (fixedp<>(-property(you.inv[you.equip[i]], PARM_EVASION)))/3;
         if (penalty > 0)
             piece_armour_evasion_penalty += penalty;
     }
 
-    return piece_armour_evasion_penalty * scale / 10 +
-           you.adjusted_body_armour_penalty(scale);
+    return piece_armour_evasion_penalty / 10 +
+           you.adjusted_body_armour_penalty();
 }
 
 // Player EV bonuses for various effects and transformations. This
@@ -2006,7 +2007,7 @@ static int _player_evasion_bonuses()
 }
 
 // Player EV scaling for being flying tengu or swimming merfolk.
-static int _player_scale_evasion(int prescaled_ev, const int scale)
+static fixedp<> _player_scale_evasion(fixedp<> prescaled_ev)
 {
     if (you.duration[DUR_PETRIFYING] || you.caught())
         prescaled_ev /= 2;
@@ -2015,14 +2016,14 @@ static int _player_scale_evasion(int prescaled_ev, const int scale)
     if (feat_is_water(env.grid(you.pos()))
         && you.get_mutation_level(MUT_NIMBLE_SWIMMER) >= 2)
     {
-        const int ev_bonus = max(2 * scale, prescaled_ev / 4);
+        const fixedp<> ev_bonus = max(2, prescaled_ev / 4);
         return prescaled_ev + ev_bonus;
     }
 
     // Flying Tengu get a 20% evasion bonus.
     if (you.tengu_flight())
     {
-        const int ev_bonus = max(1 * scale, prescaled_ev / 5);
+        const fixedp<> ev_bonus = max(1, prescaled_ev / 5);
         return prescaled_ev + ev_bonus;
     }
 
@@ -2053,10 +2054,10 @@ static int _player_scale_evasion(int prescaled_ev, const int scale)
  * @param scale     A scale to multiply the result by, to avoid precision loss.
  * @return          A bonus to EV, multiplied by the scale.
  */
-static int _player_armour_adjusted_dodge_bonus(int scale)
+static fixedp<> _player_armour_adjusted_dodge_bonus()
 {
-    const int dodge_bonus =
-        (800 + you.skill(SK_DODGING, 10) * you.dex() * 8) * scale
+    const fixedp<> dodge_bonus =
+        (800 + you.skill<100>(SK_DODGING) * 10 * you.dex() * 8)
         / (20 - _player_evasion_size_factor()) / 10 / 10;
 
     const int armour_dodge_penalty = you.unadjusted_body_armour_penalty() - 3;
@@ -2070,9 +2071,9 @@ static int _player_armour_adjusted_dodge_bonus(int scale)
 }
 
 // Total EV for player using the revised 0.6 evasion model.
-static int _player_evasion(bool ignore_helpless)
+static fixedp<> _player_evasion(bool ignore_helpless)
 {
-    const int size_factor = _player_evasion_size_factor();
+    const fixedp<> size_factor = fixedp<>(_player_evasion_size_factor());
     // Size is all that matters when paralysed or at 0 dex.
     if ((you.cannot_act() || you.duration[DUR_CLUMSY]
             || you.form == transformation::tree)
@@ -2081,24 +2082,23 @@ static int _player_evasion(bool ignore_helpless)
         return max(1, 2 + size_factor / 2);
     }
 
-    const int scale = 100;
-    const int size_base_ev = (10 + size_factor) * scale;
+    const fixedp<> size_base_ev = (10 + size_factor);
 
-    const int vertigo_penalty = you.duration[DUR_VERTIGO] ? 5 * scale : 0;
+    const fixedp<> vertigo_penalty = you.duration[DUR_VERTIGO] ? 5 : 0;
 
-    const int natural_evasion =
+    const fixedp<> natural_evasion =
         size_base_ev
-        + _player_armour_adjusted_dodge_bonus(scale)
-        - _player_adjusted_evasion_penalty(scale)
-        - you.adjusted_shield_penalty(scale)
+        + _player_armour_adjusted_dodge_bonus()
+        - _player_adjusted_evasion_penalty()
+        - you.adjusted_shield_penalty()
         - vertigo_penalty;
 
-    const int evasion_bonuses = _player_evasion_bonuses() * scale;
+    const fixedp<> evasion_bonuses = _player_evasion_bonuses();
 
-    const int final_evasion =
-        _player_scale_evasion(natural_evasion, scale) + evasion_bonuses;
+    const fixedp<> final_evasion =
+        _player_scale_evasion(natural_evasion) + evasion_bonuses;
 
-    return unscale_round_up(final_evasion, scale);
+    return final_evasion;
 }
 
 // Returns the spellcasting penalty (increase in spell failure) for the
@@ -2108,10 +2108,10 @@ int player_armour_shield_spell_penalty()
     const int scale = 100;
 
     const int body_armour_penalty =
-        max(19 * you.adjusted_body_armour_penalty(scale), 0);
+        max(19 * (int) (you.adjusted_body_armour_penalty() * scale), 0);
 
     const int total_penalty = body_armour_penalty
-                 + 19 * you.adjusted_shield_penalty(scale);
+                 + 19 * (int) (you.adjusted_shield_penalty() * scale);
 
     return max(total_penalty, 0) / scale;
 }
@@ -3246,10 +3246,10 @@ static void _display_attack_delay()
     {
         item_def fake_proj;
         populate_fake_projectile(*weapon, fake_proj);
-        delay = you.attack_delay(&fake_proj).expected();
+        delay = you.attack_delay(&fake_proj, false).expected();
     }
     else
-        delay = you.attack_delay(nullptr).expected();
+        delay = you.attack_delay(nullptr, false).expected();
 
     const bool at_min_delay = weapon
                               && you.skill(item_attack_skill(*weapon))
@@ -3273,24 +3273,6 @@ static void _display_attack_delay()
          at_min_delay ?
             " (and cannot be improved with additional weapon skill)" : "",
          penalty_msg.c_str());
-}
-
-/**
- * Print a message listing double the player's best-case damage with their current
- * weapon (if applicable), or with unarmed combat (if not).
- */
-static void _display_damage_rating()
-{
-    const item_def *weapon = you.weapon();
-    string weapon_name;
-    if (weapon)
-        weapon_name = weapon->name(DESC_YOUR);
-    else
-        weapon_name = "unarmed combat";
-    mprf("Your damage rating with %s is about %s",
-         weapon_name.c_str(),
-         damage_rating(weapon).c_str());
-    return;
 }
 
 // forward declaration
@@ -3327,7 +3309,6 @@ void display_char_status()
     _display_movement_speed();
     _display_tohit();
     _display_attack_delay();
-    _display_damage_rating();
 
     // Display base attributes, if necessary.
     if (innate_stat(STAT_STR) != you.strength()
@@ -3350,11 +3331,6 @@ bool player::clarity(bool items) const
         return true;
 
     return actor::clarity(items);
-}
-
-bool player::faith(bool items) const
-{
-    return you.has_mutation(MUT_FAITH) || actor::faith(items);
 }
 
 /// Does the player have permastasis?
@@ -3543,6 +3519,12 @@ int player::infusion_amount() const
         return min(you.hp - 1, cost);
     else
         return min(you.magic_points, cost);
+}
+
+/// How much bonus damage do you get per MP spent?
+int player::infusion_multiplier() const {
+    // Maulers are pretty fun as is, but infusion needs a buff.
+    return player_equip_unrand(UNRAND_POWER_GLOVES) ? 2 : 4;
 }
 
 void dec_hp(int hp_loss, bool fatal, const char *aux)
@@ -4697,14 +4679,9 @@ void dec_ambrosia_player(int delay)
     const int mp_restoration = div_rand_round(delay*(3 + random2(3)), BASELINE_DELAY);
 
     if (!you.duration[DUR_DEATHS_DOOR])
-    {
-        int heal = you.scale_potion_healing(hp_restoration);
-        if (you.has_mutation(MUT_LONG_TONGUE))
-            heal += hp_restoration;
-        inc_hp(heal);
-    }
+        inc_hp(you.scale_potion_healing(hp_restoration));
 
-    inc_mp(mp_restoration * (you.has_mutation(MUT_LONG_TONGUE) ? 2 : 1));
+    inc_mp(mp_restoration);
 
     if (!you.duration[DUR_AMBROSIA])
         mpr("You feel less invigorated.");
@@ -5659,13 +5636,13 @@ int player::unadjusted_body_armour_penalty() const
  * @return          A penalty to EV based quadratically on body armour
  *                  encumbrance.
  */
-int player::adjusted_body_armour_penalty(int scale) const
+fixedp<> player::adjusted_body_armour_penalty() const
 {
-    const int base_ev_penalty = unadjusted_body_armour_penalty();
+    const fixedp<int, 100> base_ev_penalty = unadjusted_body_armour_penalty();
 
     // New formula for effect of str on aevp: (2/5) * evp^2 / (str+3)
     return 2 * base_ev_penalty * base_ev_penalty * (450 - skill(SK_ARMOUR, 10))
-           * scale / (5 * (strength() + 3)) / 450;
+        * 100 / (5 * (strength() + 3)) / 450;
 }
 
 /**
@@ -5674,16 +5651,16 @@ int player::adjusted_body_armour_penalty(int scale) const
  * @param scale     A scale to multiply the result by, to avoid precision loss.
  * @return          A penalty to EV based on shield weight.
  */
-int player::adjusted_shield_penalty(int scale) const
+fixedp<> player::adjusted_shield_penalty() const
 {
     const item_def *shield_l = slot_item(EQ_SHIELD, false);
     if (!shield_l)
         return 0;
 
-    const int base_shield_penalty = -property(*shield_l, PARM_EVASION) / 10;
+    const fixedp<> base_shield_penalty(-property(*shield_l, PARM_EVASION));
     return 2 * base_shield_penalty * base_shield_penalty
-           * (270 - skill(SK_SHIELDS, 10)) * scale
-           / (5 * (20 - 3 * player_shield_racial_factor())) / 270;
+           * (270 - skill<100>(SK_SHIELDS))
+           / (5 * (20 - 3 * fixedp<>(player_shield_racial_factor()))) / 270;
 }
 
 /**
@@ -5716,14 +5693,6 @@ int player::skill(skill_type sk, int scale, bool real, bool temp) const
     if (real)
         return level;
 
-    if (player_equip_unrand(UNRAND_HERMITS_PENDANT))
-    {
-        if (sk == SK_INVOCATIONS)
-            return 14 * scale;
-        if (sk == SK_EVOCATIONS)
-            return 0;
-    }
-
     if (penance[GOD_ASHENZARI])
     {
         if (temp)
@@ -5734,7 +5703,6 @@ int player::skill(skill_type sk, int scale, bool real, bool temp) const
 
     if (temp && duration[DUR_HEROISM] && sk <= SK_LAST_MUNDANE)
         level = min(level + 5 * scale, MAX_SKILL_LEVEL * scale);
-
     return level;
 }
 
@@ -5759,7 +5727,7 @@ int player_condensation_shield_class()
  * How many points of AC does the player get from their sanguine armour, if
  * they have any?
  *
- * @return      The AC bonus.
+ * @return      The AC bonus * 100. (For scaling.)
  */
 fixedp<> sanguine_armour_bonus()
 {
@@ -5776,6 +5744,8 @@ fixedp<> sanguine_armour_bonus()
  * armour?
  *
  * @param armour    The armour in question.
+ * @param scale     A value to multiply the result by. (Used to avoid integer
+ *                  rounding.)
  * @return          The AC from that armour, including armour skill, mutations
  *                  & divine blessings, but not enchantments or egos.
  */
@@ -5784,10 +5754,10 @@ fixedp<> player::base_ac_from(const item_def &armour) const
     const fixedp<> base(property(armour, PARM_AC));
 
     // [ds] effectively: ac_value * (22 + Arm) / 22, where Arm = Armour Skill.
-    const fixedp<> AC = base * (22 + fixedp<>::from_scaled(skill(SK_ARMOUR, 100))) / 22;
+    const fixedp<> AC = base * (22 + skill<100>(SK_ARMOUR)) / 22;
 
     // The deformed don't fit into body armour very well.
-    // (This includes nagas and armataurs.)
+    // (This includes nagas and palentongas.)
     if (get_armour_slot(armour) == EQ_BODY_ARMOUR
             && (get_mutation_level(MUT_DEFORMED)
                 || get_mutation_level(MUT_PSEUDOPODS)))
@@ -5804,7 +5774,7 @@ fixedp<> player::base_ac_from(const item_def &armour) const
  * Does not account for any real mutations, such as scales or thick skin, that
  * you may have as a result of your species.
  * @param temp Whether to account for transformations.
- * @returns how much AC you are getting from your species "fake mutations".
+ * @returns how much AC you are getting from your species "fake mutations" * 100
  */
 fixedp<> player::racial_ac(bool temp) const
 {
@@ -5845,8 +5815,8 @@ class mutation_ac_changes{
          * @return How much AC to give the player for the handled
          *         mutation.
          */
-        int get_ac_change_for_mutation(){
-            int ac_change = 0;
+        fixedp<> get_ac_change_for_mutation(){
+            fixedp<> ac_change(0);
 
             int mutation_level = you.get_mutation_level(mut, mutation_activation_threshold);
 
@@ -5862,7 +5832,7 @@ class mutation_ac_changes{
             }
 
             // The output for this function is scaled differently than the UI.
-            return ac_change * 100;
+            return ac_change;
         }
 
         mutation_ac_changes(mutation_type mut_aug,
@@ -5911,10 +5881,10 @@ vector<mutation_ac_changes> all_mutation_ac_changes = {
  * @return  The player's AC gain from mutation, with 100 scaling (i.e,
  *          the returned result 100 times the UI shows as of Jan 2020)
 */
-int player::ac_changes_from_mutations() const
+fixedp<> player::ac_changes_from_mutations() const
 {
 
-    int AC = 0;
+    fixedp<> AC(0);
 
     for (vector<mutation_ac_changes>::iterator it =
             all_mutation_ac_changes.begin();
@@ -6016,7 +5986,7 @@ fixedp<> player::base_ac_with_specific_items(vector<const item_def *> armour_ite
         }
 
         if (get_armour_ego_type(*item) == SPARM_PROTECTION)
-            AC += 3;
+            AC += 300;
     }
 
     AC += wearing(EQ_RINGS_PLUS, RING_PROTECTION);
@@ -6094,7 +6064,7 @@ int player::armour_class_with_specific_items(vector<const item_def *> items) con
 
     if (duration[DUR_ICY_ARMOUR])
     {
-        AC += max(0, 5 + (fixedp<>(you.props[ICY_ARMOUR_KEY].get_int()) * 8) / 100
+        AC += max(0, 5 + (fixedp<>(you.props[ICY_ARMOUR_KEY].get_int()) * 8)
                      - unadjusted_body_armour_penalty() / 2);
     }
 
@@ -6117,7 +6087,12 @@ int player::armour_class_with_specific_items(vector<const item_def *> items) con
     AC -= 4 * corrosion_amount();
 
     AC += sanguine_armour_bonus();
-    dprf("AC is %g, %d", (float)AC, (int)AC);
+
+    if (you.has_mutation(MUT_CURL)
+        && you.props[PALENTONGA_CURL_KEY].get_bool())
+    {
+        AC += 7;
+    }
 
     return (int) AC;
 }
@@ -6150,7 +6125,7 @@ int player::gdr_perc() const
  */
 int player::evasion(bool ignore_helpless, const actor* act) const
 {
-    const int base_evasion = _player_evasion(ignore_helpless);
+    const fixedp<> base_evasion = _player_evasion(ignore_helpless);
 
     const int constrict_penalty = is_constricted() ? 3 : 0;
 
@@ -6158,7 +6133,7 @@ int player::evasion(bool ignore_helpless, const actor* act) const
     const int invis_penalty
         = attacker_invis && !ignore_helpless ? 10 : 0;
 
-    return base_evasion - constrict_penalty - invis_penalty;
+    return ((int)ceil(base_evasion)) - constrict_penalty - invis_penalty;
 }
 
 bool player::heal(int amount)
@@ -6298,8 +6273,7 @@ bool player::res_miasma(bool temp) const
 {
     if (has_mutation(MUT_FOUL_STENCH)
         || is_nonliving(temp)
-        || temp && (get_form()->res_miasma()
-                    || you.props.exists(MIASMA_IMMUNE_KEY)))
+        || temp && get_form()->res_miasma())
     {
         return true;
     }
@@ -7215,11 +7189,6 @@ bool player::is_stationary() const
         || you.duration[DUR_LOCKED_DOWN];
 }
 
-bool player::is_motile() const
-{
-    return !is_stationary() && !you.duration[DUR_NO_MOMENTUM];
-}
-
 bool player::malmutate(const string &reason)
 {
     ASSERT(!crawl_state.game_is_arena());
@@ -7442,7 +7411,7 @@ bool player::can_do_shaft_ability(bool quiet) const
 
     if (feat_is_shaftable(env.grid(pos())))
     {
-        if (!is_valid_shaft_level(false))
+        if (!is_valid_shaft_level())
         {
             if (!quiet)
                 mpr("You can't shaft yourself on this level.");
