@@ -1376,7 +1376,7 @@ static void _append_weapon_stats(string &description, const item_def &item)
     if (is_slowed_by_armour(&item))
     {
         const int penalty_scale = 100;
-        const int armour_penalty = you.adjusted_body_armour_penalty(penalty_scale);
+        const int armour_penalty = (int) (you.adjusted_body_armour_penalty() * penalty_scale);
         description += "\n";
         if (armour_penalty)
         {
@@ -2084,7 +2084,7 @@ static string _describe_armour(const item_def &item, bool verbose, bool monster)
     }
 
     const int DELAY_SCALE = 100;
-    const int aevp = you.adjusted_body_armour_penalty(DELAY_SCALE);
+    const int aevp = (int) (you.adjusted_body_armour_penalty() * DELAY_SCALE);
     if (crawl_state.need_save
         && verbose
         && aevp

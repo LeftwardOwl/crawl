@@ -843,14 +843,18 @@ public:
     bool missile_repulsion() const override;
 
     // Combat-related adjusted penalty calculation methods
-    int unadjusted_body_armour_penalty() const override;
-    int adjusted_body_armour_penalty(int scale = 1) const override;
-    int adjusted_shield_penalty(int scale = 1) const override;
+    int unadjusted_body_armour_penalty() const;
+    fixedp<> adjusted_body_armour_penalty() const;
+    fixedp<> adjusted_shield_penalty() const;
 
     bool wearing_light_armour(bool with_skill = false) const;
     int  skill(skill_type skill, int scale = 1, bool real = false,
                bool temp = true) const override;
-
+    template <int S> fixedp<int, S> skill(skill_type sk,
+        bool real = false, bool drained = true, bool temp = true) const
+    {
+        return fixedp<int, S>::from_scaled(skill(sk, S, real, temp));
+    }
     bool do_shaft(bool check_terrain = true) override;
     bool shaftable(bool check_terrain = true) const;
 
