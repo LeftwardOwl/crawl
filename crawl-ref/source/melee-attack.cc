@@ -2225,9 +2225,11 @@ int melee_attack::post_roll_to_hit_modifiers(int mhit, bool random, bool aux)
     if (you.duration[DUR_CONFUSING_TOUCH] && !aux)
         modifiers += maybe_random_div(you.dex(), 2, random);
 
+    /*
     // Electric charges feel bad when they miss, so make them miss less often.
     if (charge_pow > 0)
         modifiers += 5; // matching UC form to-hit bonuses
+    */
 
     if (attacker->is_player() && !weapon && get_form()->unarmed_hit_bonus)
     {
@@ -2352,10 +2354,10 @@ void melee_attack::announce_hit()
             verb_degree = " " + verb_degree;
         }
 
-        mprf("You %s %s%s%s%s%s",
+        mprf("You %s %s%s%s%s",
              attack_verb.c_str(),
              defender->name(DESC_THE).c_str(), verb_degree.c_str(),
-             charge_desc().c_str(), debug_damage_number().c_str(),
+             /*charge_desc().c_str()*/, debug_damage_number().c_str(),
              attack_strength_punctuation(damage_done).c_str());
     }
 }
