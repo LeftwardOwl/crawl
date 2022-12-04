@@ -147,7 +147,7 @@ spret cast_summon_cactus(int pow, god_type god, bool fail)
     fail_check();
 
     mgen_data mg = _pal_data(MONS_CACTUS_GIANT, 3, god, SPELL_SUMMON_CACTUS);
-    mg.hp = hit_points(pow + 27, 1);
+    mg.hp = (int) (hit_points(pow + 27) * 10);
     if (!create_monster(mg))
         canned_msg(MSG_NOTHING_HAPPENS);
 
@@ -514,7 +514,7 @@ spret cast_summon_mana_viper(int pow, god_type god, bool fail)
     viper.hd = (5 + div_rand_round(pow, 12));
 
     // Don't scale hp at the same time as their antimagic power
-    viper.hp = hit_points(495); // avg 50
+    viper.hp = (int) (hit_points(495)); // avg 50
 
     if (create_monster(viper))
         mpr("A mana viper appears with a sibilant hiss.");

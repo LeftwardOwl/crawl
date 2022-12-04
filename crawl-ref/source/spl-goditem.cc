@@ -167,7 +167,7 @@ static int _pacification_sides(const monster_type mc, int pow)
 static int _pacification_hp(monster_type mc)
 {
     return mons_is_pghost(mc) || mc == MONS_PANDEMONIUM_LORD ? 1000
-        : mons_avg_hp(mc);
+        : (int) (mons_avg_hp(mc));
 }
 
 /**

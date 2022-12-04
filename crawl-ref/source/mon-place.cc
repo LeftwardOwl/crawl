@@ -1126,7 +1126,7 @@ static monster* _place_monster_aux(const mgen_data &mg, const monster *leader,
         // Re-roll HP.
         const int base_avg_hp = m_ent->avg_hp_10x + bonus_hp;
         const int new_avg_hp = div_rand_round(base_avg_hp * mg.hd, m_ent->HD);
-        const int hp = hit_points(new_avg_hp);
+        const int hp = (int) (hit_points(new_avg_hp));
         // But only for monsters with random HP. (XXX: should be everything?)
         if (hp > 0)
         {
@@ -1626,9 +1626,9 @@ void roll_zombie_hp(monster* mon)
     ASSERT(mon); // TODO: change to monster &mon
     ASSERT(mons_class_is_zombified(mon->type));
 
-    const int avg_hp_10x = derived_undead_avg_hp(mon->type,
-                                                 mon->get_hit_dice());
-    const int hp = hit_points(avg_hp_10x);
+    const int avg_hp_10x = (int) (derived_undead_avg_hp(mon->type,
+                                                 mon->get_hit_dice()));
+    const int hp = (int) (hit_points(avg_hp_10x));
     mon->max_hit_points = max(hp, 1);
     mon->hit_points     = mon->max_hit_points;
 }

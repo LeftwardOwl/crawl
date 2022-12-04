@@ -233,11 +233,11 @@ bool mons_is_hepliaklqana_ancestor(monster_type mc);
 
 int mutant_beast_tier(int xl);
 
-int mons_avg_hp(monster_type mc, int scale = 1);
+fixedp<> mons_avg_hp(monster_type mc);
 int mons_max_hp(monster_type mc);
 int exper_value(const monster& mon, bool real = true, bool legacy = false);
 
-int hit_points(int avg_hp, int scale = 10);
+fixedp<> hit_points(int avg_hp);
 
 int mons_class_hit_dice(monster_type mc);
 int mons_class_willpower(monster_type type, monster_type base);
@@ -579,4 +579,4 @@ bool apply_visible_monsters(monster_func mf,
                             const coord_def& center = you.pos(),
                             los_type los = LOS_NO_TRANS);
 
-int derived_undead_avg_hp(monster_type mtype, int hd, int scale = 10);
+fixedp<> derived_undead_avg_hp(monster_type mtype, int hd);

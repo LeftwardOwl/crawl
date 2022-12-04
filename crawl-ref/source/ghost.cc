@@ -621,7 +621,7 @@ void ghost_demon::init_ugly_thing(bool very_ugly, bool only_mutate,
     if (!only_mutate)
     {
         xl = stats->HD;
-        max_hp = hit_points(stats->avg_hp_10x);
+        max_hp = (int)(hit_points(stats->avg_hp_10x));
     }
 
     const attack_type att_types[] =

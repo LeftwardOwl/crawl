@@ -845,8 +845,8 @@ string monster_info::get_max_hp_desc() const
 
     const int scale = 100;
     const int base_avg_hp = mons_class_is_zombified(type) ?
-                            derived_undead_avg_hp(type, hd, scale) :
-                            mons_avg_hp(type, scale);
+                            (int) (derived_undead_avg_hp(type, hd)) :
+                            (int) (mons_avg_hp(type));
     int mhp = base_avg_hp;
     if (props.exists(VAULT_HD_KEY))
     {
@@ -1247,7 +1247,7 @@ bool monster_info::less_than(const monster_info& m1, const monster_info& m2,
         return false;
     }
 
-    int diff_delta = mons_avg_hp(m1.type) - mons_avg_hp(m2.type);
+    int diff_delta = (int) (mons_avg_hp(m1.type) - mons_avg_hp(m2.type));
 
     // By descending difficulty
     if (diff_delta > 0)

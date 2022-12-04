@@ -2503,7 +2503,7 @@ static bool _monster_eat_item(monster* mons)
 
         // This is done manually instead of using heal_monster(),
         // because that function doesn't work quite this way. - bwr
-        const int avg_hp = mons_avg_hp(mons->type);
+        const int avg_hp = (int) (mons_avg_hp(mons->type));
         mons->hit_points += hps_changed;
         mons->hit_points = min(MAX_MONSTER_HP,
                                min(avg_hp * 4, mons->hit_points));
@@ -3076,7 +3076,7 @@ static void _jelly_grows(monster& mons)
              you.see_cell(mons.pos()) ? "" : " distant");
     }
 
-    const int avg_hp = mons_avg_hp(mons.type);
+    const int avg_hp = (int) (mons_avg_hp(mons.type));
     mons.hit_points += 5;
     mons.hit_points = min(MAX_MONSTER_HP,
                           min(avg_hp * 4, mons.hit_points));

@@ -1252,7 +1252,7 @@ int max_corpse_chunks(monster_type mc)
     }
 }
 
-int derived_undead_avg_hp(monster_type mtype, int hd, int scale)
+fixedp<> derived_undead_avg_hp(monster_type mtype, int hd)
 {
     static const map<monster_type, int> hp_per_hd_by_type = {
         { MONS_BOUND_SOUL,     100 },
@@ -1265,7 +1265,7 @@ int derived_undead_avg_hp(monster_type mtype, int hd, int scale)
 
     const int* hp_per_hd = map_find(hp_per_hd_by_type, mtype);
     ASSERT(hp_per_hd);
-    return *hp_per_hd * hd * scale / 10;
+    return fixedp<>(*hp_per_hd * hd);
 }
 
 monster_type mons_genus(monster_type mc)
@@ -2235,7 +2235,7 @@ bool mons_flattens_trees(const monster& mon)
  *                  hp value, regardless of the scale on the input.
  *                  If avg_hp is nonzero, always returns at least 1.
  */
-int hit_points(int avg_hp, int scale)
+fixedp<> hit_points(int avg_hp)
 {
     if (!avg_hp)
         return 0;
@@ -2243,8 +2243,8 @@ int hit_points(int avg_hp, int scale)
     const int min_perc = 33;
     const int hp_variance = div_rand_round(avg_hp * min_perc, 100);
     const int min_hp = avg_hp - hp_variance;
-    const int hp = min_hp + random2avg(hp_variance * 2, 8);
-    return max(1, div_rand_round(hp, scale));
+    const int hp(min_hp + random2avg(hp_variance * 2, 8));
+    return fixedp<>(max(1, div_rand_round(hp, 10)));
 }
 
 // This function returns the standard number of hit dice for a type of
@@ -2305,14 +2305,14 @@ bool mons_class_sees_invis(monster_type type, monster_type base)
  * @param mc        The type of monster in question.
  * @return          The average hp for that monster; rounds down.
  */
-int mons_avg_hp(monster_type mc, int scale)
+fixedp<> mons_avg_hp(monster_type mc)
 {
     const monsterentry* me = get_monster_data(mc);
 
     if (!me)
         return 0;
 
-    return me->avg_hp_10x * scale / 10;
+    return fixedp<>(me->avg_hp_10x) / 10;
 }
 
 /**
@@ -2824,7 +2824,7 @@ void define_monster(monster& mons, bool friendly)
 
     // Some calculations.
     if (hp == 0)
-        hp = hit_points(m->avg_hp_10x);
+        hp = (int) (hit_points(m->avg_hp_10x));
     const int hp_max = hp;
 
     // So let it be written, so let it be done.
